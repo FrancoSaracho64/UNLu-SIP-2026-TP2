@@ -80,7 +80,7 @@ def deduplicate(results: list[dict]) -> list[dict]:
             unique.append(r)
         elif not key:
             unique.append(r)  # sin link: incluir igual, no se puede deduplicar
-    logger.info("Deduplicados: %d → %d", len(results), len(unique))
+    logger.info("event=deduplication_done | original=%d | unique=%d", len(results), len(unique))
     return unique
 
 
@@ -135,8 +135,8 @@ def _extract_page_results(driver, cards, product: str, page: int) -> list[dict]:
             results.append(item)
         except Exception as e:
             logger.error(
-                "Resultado %d descartado | producto=%s | página=%d | %s",
-                idx, product, page, e,
+                "event=extraction_item_error | producto='%s' | página=%d | item_idx=%d | error='%s'",
+                product, page, idx, type(e).__name__,
                 exc_info=True,
             )
     return results
@@ -173,29 +173,29 @@ def scrape_all_pages(
         offset = (page - 1) * results_per_page
         url = build_page_url(product, offset)
         logger.info(
-            "Scrapeando página %d/%d | producto=%s | offset=%d",
-            page, max_pages, product, offset,
+            "event=page_scrape_start | producto='%s' | page=%d/%d | offset=%d",
+            product, page, max_pages, offset,
         )
         try:
             _load_page_with_retry(driver, url)
             cards = _get_result_cards(driver)
             if not cards:
                 logger.warning(
-                    "Página %d sin resultados, deteniendo paginación | producto=%s",
-                    page, product,
+                    "event=page_scrape_empty | producto='%s' | page=%d | msg='Sin resultados, deteniendo paginación'",
+                    product, page,
                 )
                 break
             page_results = _extract_page_results(driver, cards, product, page)
             all_results.extend(page_results)
             logger.info(
-                "Página %d completada | resultados=%d | acumulado=%d",
-                page, len(page_results), len(all_results),
+                "event=page_scrape_success | producto='%s' | page=%d | resultados=%d | acumulado=%d",
+                product, page, len(page_results), len(all_results),
             )
             time.sleep(3)
         except Exception as e:
             logger.error(
-                "Fallo en página %d | producto=%s | %s",
-                page, product, e,
+                "event=page_scrape_error | producto='%s' | page=%d | error='%s'",
+                product, page, type(e).__name__,
                 exc_info=True,
             )
             break

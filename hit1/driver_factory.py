@@ -1,6 +1,9 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
+import logging
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
+
+logger = logging.getLogger(__name__)
 
 def build_chrome_options(headless: bool) -> ChromeOptions:
     options = ChromeOptions()
@@ -41,11 +44,18 @@ def build_firefox_options(headless: bool) -> FirefoxOptions:
 
 def build_driver(browser: str, headless: bool) -> webdriver.Remote:
     browser = browser.lower()
-    if browser == "chrome":
-        options = build_chrome_options(headless)
-        return webdriver.Chrome(options=options)
-    elif browser == "firefox":
-        options = build_firefox_options(headless)
-        return webdriver.Firefox(options=options)
-    else:
-        raise ValueError(f"browser desconocido: {browser}")
+    logger.info("event=driver_init_start | browser='%s' | headless=%s", browser, headless)
+    try:
+        if browser == "chrome":
+            options = build_chrome_options(headless)
+            driver = webdriver.Chrome(options=options)
+        elif browser == "firefox":
+            options = build_firefox_options(headless)
+            driver = webdriver.Firefox(options=options)
+        else:
+            raise ValueError(f"browser desconocido: {browser}")
+        logger.info("event=driver_init_success | browser='%s'", browser)
+        return driver
+    except Exception as e:
+        logger.error("event=driver_init_error | browser='%s' | error='%s'", browser, type(e).__name__, exc_info=True)
+        raise

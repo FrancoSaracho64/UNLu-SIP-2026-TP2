@@ -23,8 +23,8 @@ def with_backoff(
                 except exceptions as e:
                     if intento == max_attempts:
                         logger.error(
-                            "Fallo total tras agotar reintentos | función=%s | intentos=%d",
-                            getattr(func, '__name__', str(func)), max_attempts, exc_info=True
+                            "event=retry_exhausted | function='%s' | max_attempts=%d | error='%s'",
+                            getattr(func, '__name__', str(func)), max_attempts, type(e).__name__, exc_info=True
                         )
                         raise e
                     
@@ -37,10 +37,10 @@ def with_backoff(
                     # "Retry intento {n}/{max_attempts} | delay={delay:.1f}s | excepción={type(e).__name__} | {context}"
                     # No tenemos el context explícito siempre en el scope del decorator a menos que armemos uno.
                     # Armamos un mini context del nombre de la función y args.
-                    context_str = f"func={getattr(func, '__name__', str(func))}"
+                    function_name = getattr(func, '__name__', str(func))
                     logger.warning(
-                        "Retry intento %d/%d | delay=%.1fs | excepción=%s | %s",
-                        intento, max_attempts, delay, type(e).__name__, context_str
+                        "event=retry_attempt | function='%s' | attempt=%d/%d | delay=%.1fs | error='%s'",
+                        function_name, intento, max_attempts, delay, type(e).__name__
                     )
                     time.sleep(delay)
                 # Si lanza una excepción no contemplada en `exceptions`, se propaga inmediatamente sin ser capturada

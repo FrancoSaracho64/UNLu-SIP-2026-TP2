@@ -44,7 +44,7 @@ def compute_stats(results: list[dict], product: str) -> dict:
 
     if not precios:
         logger.warning(
-            "Sin precios válidos para estadísticas | producto=%s", product
+            "event=stats_no_prices | producto='%s' | msg='Sin precios válidos para estadísticas'", product
         )
         return {
             "producto": product,
@@ -133,4 +133,4 @@ def save_stats(all_stats: list[dict], output_dir: str = "output") -> None:
     path = os.path.join(output_dir, "stats.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(all_stats, f, ensure_ascii=False, indent=2)
-    logger.info("Estadísticas guardadas en %s", path)
+    logger.info("event=stats_save_success | path='%s'", path)

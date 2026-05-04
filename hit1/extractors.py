@@ -13,8 +13,8 @@ def extract_titulo(element, context: dict):
             return element.find_element(By.CSS_SELECTOR, selectors.SELECTOR_LINK).text.strip()
     except Exception as e:
         logger.warning(
-            "Campo ausente o error: titulo | producto=%s | browser=%s | selector=%s | error=%s",
-            context.get("producto"), context.get("browser"), selectors.SELECTOR_TITULO, type(e).__name__
+            "event=field_extraction_error | field='titulo' | producto='%s' | browser='%s' | error='%s'",
+            context.get("producto"), context.get("browser"), type(e).__name__
         )
         return None
 
@@ -25,8 +25,8 @@ def extract_precio(element, context: dict):
         return float(precio_str)
     except Exception as e:
         logger.warning(
-            "Campo ausente o error: precio | producto=%s | browser=%s | selector=%s | error=%s",
-            context.get("producto"), context.get("browser"), selectors.SELECTOR_PRECIO, type(e).__name__
+            "event=field_extraction_error | field='precio' | producto='%s' | browser='%s' | error='%s'",
+            context.get("producto"), context.get("browser"), type(e).__name__
         )
         return None
 
@@ -38,8 +38,8 @@ def extract_link(element, context: dict):
         return url
     except Exception as e:
         logger.warning(
-            "Campo ausente o error: link | producto=%s | browser=%s | selector=%s | error=%s",
-            context.get("producto"), context.get("browser"), selectors.SELECTOR_LINK, type(e).__name__
+            "event=field_extraction_error | field='link' | producto='%s' | browser='%s' | error='%s'",
+            context.get("producto"), context.get("browser"), type(e).__name__
         )
         return None
 
@@ -49,10 +49,10 @@ def extract_tienda_oficial(element, context: dict):
         if text.lower().startswith("por "):
             return text[4:] or None
         return text or None
-    except Exception:
+    except Exception as e:
         logger.warning(
-            "Campo ausente: tienda_oficial | producto=%s | browser=%s | selector=%s",
-            context.get("producto"), context.get("browser"), selectors.SELECTOR_TIENDA_OFICIAL
+            "event=field_missing | field='tienda_oficial' | producto='%s' | browser='%s' | error='%s'",
+            context.get("producto"), context.get("browser"), type(e).__name__
         )
         return None
 
@@ -60,23 +60,23 @@ def extract_envio_gratis(element, context: dict):
     try:
         element.find_element(By.CSS_SELECTOR, selectors.SELECTOR_ENVIO_GRATIS)
         return True
-    except Exception:
+    except Exception as e:
         # Envio gratis es usualmente False si no esta, no lo tratamos como error pero devolvemos False
         # Igual dejamos un debug log por si acaso, pero warning capaz es mucho, aunque el prompt
         # dice "Cada función en extractors.py debe cumplir este contrato explicito: [...] loggear en nivel WARNING"
         # Así que loggeamos warning.
         logger.warning(
-            "Campo ausente: envio_gratis | producto=%s | browser=%s | selector=%s",
-            context.get("producto"), context.get("browser"), selectors.SELECTOR_ENVIO_GRATIS
+            "event=field_missing | field='envio_gratis' | producto='%s' | browser='%s' | error='%s'",
+            context.get("producto"), context.get("browser"), type(e).__name__
         )
         return False
 
 def extract_cuotas(element, context: dict):
     try:
         return element.find_element(By.CSS_SELECTOR, selectors.SELECTOR_CUOTAS).text.strip() or None
-    except Exception:
+    except Exception as e:
         logger.warning(
-            "Campo ausente: cuotas_sin_interes | producto=%s | browser=%s | selector=%s",
-            context.get("producto"), context.get("browser"), selectors.SELECTOR_CUOTAS
+            "event=field_missing | field='cuotas_sin_interes' | producto='%s' | browser='%s' | error='%s'",
+            context.get("producto"), context.get("browser"), type(e).__name__
         )
         return None

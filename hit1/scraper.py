@@ -78,7 +78,7 @@ def main() -> None:
     max_pages = MAX_PAGES
 
     logger.info(
-        "Iniciando scraper | productos=%d | browser=%s | headless=%s | max_pages=%d | delay=%ds",
+        "event=scraper_start | productos=%d | browser='%s' | headless=%s | max_pages=%d | delay=%ds",
         len(products), browser, headless, max_pages, DELAY_BETWEEN_PRODUCTS,
     )
 
@@ -94,35 +94,44 @@ def main() -> None:
 
     try:
         for idx, product in enumerate(products):
-            logger.info("=== Procesando producto: %s ===", product)
-            results = scrape_all_pages(
-                driver, product, max_pages=max_pages, results_per_page=10
-            )
-
-            # Persistir JSON local
-            if results:
-                save_json(results, product)
-            else:
-                logger.warning(
-                    "Sin resultados para el producto '%s', no se escribe JSON", product
+            logger.info("event=product_start | producto='%s'", product)
+            try:
+                results = scrape_all_pages(
+                    driver, product, max_pages=max_pages, results_per_page=10
                 )
 
-            # Persistir en Postgres (opcional)
-            if postgres_enabled():
-                save_results(results, product, browser)
+                # Persistir JSON local
+                if results:
+                    save_json(results, product)
+                    logger.info("event=json_save_success | producto='%s' | items=%d", product, len(results))
+                else:
+                    logger.warning("event=product_empty | producto='%s' | msg='Sin resultados, no se escribe JSON'", product)
 
-            # Calcular estadísticas para la tabla resumen
-            stats = compute_stats(results, product)
-            all_stats.append(stats)
+                # Persistir en Postgres (opcional)
+                if postgres_enabled():
+                    save_results(results, product, browser)
+
+                # Calcular estadísticas para la tabla resumen
+                stats = compute_stats(results, product)
+                all_stats.append(stats)
+                logger.info("event=product_success | producto='%s'", product)
+
+            except Exception as e:
+                logger.error("event=product_error | producto='%s' | error='%s'", product, type(e).__name__, exc_info=True)
 
             # Pausa entre productos para evitar throttling (excepto el último)
             if idx < len(products) - 1:
-                logger.info("Esperando %ds antes del siguiente producto...", DELAY_BETWEEN_PRODUCTS)
+                logger.info("event=throttling_wait | delay=%ds", DELAY_BETWEEN_PRODUCTS)
                 time.sleep(DELAY_BETWEEN_PRODUCTS)
 
+    except Exception as e:
+        logger.critical("event=scraper_fatal_error | error='%s'", type(e).__name__, exc_info=True)
     finally:
-        driver.quit()
-        logger.info("Driver cerrado correctamente")
+        try:
+            driver.quit()
+            logger.info("event=driver_quit_success")
+        except Exception as e:
+            logger.error("event=driver_quit_error | error='%s'", type(e).__name__, exc_info=True)
 
     # Imprimir tabla de resumen y guardar stats.json
     print_stats_table(all_stats)

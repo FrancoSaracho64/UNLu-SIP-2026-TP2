@@ -1,18 +1,72 @@
-# Hit #8 — Kubernetes con PostgreSQL y Estadísticas Avanzadas
+# Hit #1 y Aplicación Base — Stack de Observabilidad + Scraper en Kubernetes
 
-Este último Hit extiende el despliegue en Kubernetes agregando capacidades de persistencia en una base de datos **PostgreSQL**, así como lógica avanzada para paginar resultados y calcular estadísticas de los productos extraídos.
+Este directorio contiene tanto el código de la aplicación de Scraping (estado base) como la implementación del **Hit #1** (Infraestructura de Observabilidad con Loki, Promtail y Grafana).
 
-## Nuevas capacidades
+Para un flujo de trabajo ideal, se recomienda primero levantar el Stack de Observabilidad (Hit #1) y luego desplegar la aplicación base para que sus logs sean recolectados automáticamente por Promtail.
 
-| Capacidad | Descripción |
-|---|---|
-| **Paginación** | Extrae hasta 30 resultados por producto (por defecto navegando 3 páginas). |
-| **Estadísticas** | Genera una tabla de min/max/mediana/promedio/desvío que se imprime en consola (`stdout`) y se exporta a `output/stats.json`. |
-| **Histórico** | Almacena y acumula los resultados extraídos por las corridas del CronJob directamente en una base de datos PostgreSQL en el cluster. |
+---
 
-## Variables de entorno soportadas
+## Parte 1: Stack de Observabilidad (Hit #1)
 
-El scraper acepta configuración mediante variables de entorno (definidas en los manifiestos `.yaml` de Kubernetes o pasadas directamente localmente):
+Todo lo declarativo y reproducible para desplegar Loki, Promtail y Grafana está en la carpeta `observability/`.
+
+### Prerrequisitos
+- Clúster local de Kubernetes (ej: `k3s`, `kIND`).
+- Herramientas `kubectl` configuradas y `helm` instalado.
+
+### Despliegue del Stack (Un solo comando)
+El script provee una instalación idempotente que levanta el namespace `observability`, aplica los manifiestos base, provisiona el dashboard as-code y despliega los componentes vía Helm.
+
+```bash
+cd observability
+./install.sh
+cd ..
+```
+
+### Verificación del Stack
+
+Verifica el estado de los componentes con:
+```bash
+kubectl -n observability get pods
+```
+
+**Output esperado:**
+```text
+NAME                       READY   STATUS    RESTARTS   AGE
+loki-0                     1/1     Running   0          3m
+promtail-7d5fb             1/1     Running   0          3m
+grafana-69b8f8c4d4-xxxxx   1/1     Running   0          2m
+```
+
+Verifica los servicios:
+```bash
+kubectl -n observability get svc
+```
+
+**Output esperado:**
+```text
+NAME       TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)
+grafana    NodePort    10.43.x.x       <none>        80:30000/TCP
+loki       ClusterIP   10.43.x.x       <none>        3100/TCP,9095/TCP
+```
+
+### Acceso a Grafana y Validación End-to-End
+
+1. Abre `http://<node-ip>:30000` en tu navegador.
+2. Inicia sesión con el usuario `admin`.
+   - La contraseña está configurada en `manifests/grafana-secret.yaml`. Si no la cambiaste, puedes obtenerla ejecutando:
+     ```bash
+     kubectl get secret -n observability grafana-admin -o jsonpath="{.data.admin-password}" | base64 --decode
+     ```
+3. Ve al menú **Explore**, selecciona el datasource **Loki** y ejecuta la query `{namespace="observability"}`. Tienen que aparecer logs del propio stack. Eso prueba que el pipeline Promtail → Loki → Grafana está cerrado end-to-end.
+
+---
+
+## Parte 2: Aplicación Scraper (Hit Base)
+
+Este scraper extrae información de productos de MercadoLibre. Actualmente tiene capacidades de paginación, cálculo de estadísticas y almacenamiento persistente en PostgreSQL.
+
+### Variables de Entorno de la Aplicación
 
 | Variable | Descripción | Default |
 |---|---|---|
@@ -22,19 +76,14 @@ El scraper acepta configuración mediante variables de entorno (definidas en los
 | `PRODUCTS` | Lista de productos a buscar, separados por saltos de línea | 3 productos predefinidos |
 | `POSTGRES_HOST` | Host de la BD. Si **no** está definido, se omite la escritura a PostgreSQL | — |
 
----
+### Guía de Despliegue de la Aplicación en Kubernetes
 
-## Guía de Despliegue en Kubernetes
-
-### 1. Crear el Secret con credenciales
-
-Para que la BD de PostgreSQL se levante correctamente y el scraper se pueda conectar, necesitas crear un **Secret** de Kubernetes con las credenciales.
-> **NOTA**: El archivo `postgres-secret.yaml` se encuentra en `.gitignore` intencionalmente. Nunca debes commitear contraseñas reales.
-
-Ejecuta el siguiente bloque para generarlo localmente:
+#### 1. Crear el Secret con credenciales
+Genera las contraseñas necesarias para que la BD de PostgreSQL se levante y el scraper se pueda conectar.
+> **NOTA**: `postgres-secret.yaml` se encuentra en `.gitignore`. Nunca commitees credenciales.
 
 ```bash
-cat > hit8/k8s/postgres-secret.yaml <<'EOF'
+cat > k8s/postgres-secret.yaml <<'EOF'
 apiVersion: v1
 kind: Secret
 metadata:
@@ -48,55 +97,48 @@ stringData:
   POSTGRES_PASSWORD: mimagnificapassword
 EOF
 ```
-*(Puedes reemplazar `mimagnificapassword` por la que desees)*
 
-### 2. Construir la imagen e importarla al cluster
-
-Construimos la imagen en base al Dockerfile de la carpeta actual y la importamos.
+#### 2. Construir la imagen e importarla al cluster
+Debes buildear la imagen del scraper en base al Dockerfile actual:
 
 *(Ejemplo usando k3s)*:
 ```bash
-docker build -t ml-scraper:latest hit8/
+docker build -t ml-scraper:latest .
 docker save ml-scraper:latest -o /tmp/ml-scraper.tar
 sudo k3s ctr images import /tmp/ml-scraper.tar && rm /tmp/ml-scraper.tar
 ```
-*(Si usas k3d, haz `k3d image import ml-scraper:latest -c <tu-cluster>`)*
 
-### 3. Aplicar manifiestos y esperar a que la BD esté lista
-
-Desplegamos el servicio, el deployment de Postgres, el Secret y los Jobs:
+#### 3. Aplicar manifiestos
+Levantamos los recursos:
 
 ```bash
-kubectl apply -f hit8/k8s/
+kubectl apply -f k8s/
 ```
 
-Esperamos a que la base de datos PostgreSQL se levante por completo:
-
+Esperamos a que la base de datos PostgreSQL inicie por completo:
 ```bash
 kubectl wait --for=condition=ready pod -l app=postgres --timeout=120s
 ```
 
-Una vez que la BD esté lista, podemos ver la ejecución del scraper. Para evitar warnings de Kubernetes sobre múltiples contenedores, especificamos `-c scraper`:
+> **¡Magia de la Observabilidad!** 🪄  
+> Como ya desplegaste Promtail en el paso anterior, este detectará automáticamente la creación del Job del scraper y capturará sus registros. Entra a tu Grafana y podrás ver el Dashboard pre-cargado de "Scraper Overview" mostrando los logs de esta ejecución sin necesidad de usar `kubectl logs`.
 
+Si igual quieres ver la ejecución por consola local:
 ```bash
 kubectl logs -l job-type=one-off -c scraper -f
 ```
 
-### 4. Consultar histórico almacenado en PostgreSQL
-
-Si el job finalizó exitosamente, puedes conectarte directamente a la base de datos dentro del Pod de Postgres y correr una query SQL de prueba para verificar los datos cacheados:
-
+#### 4. Consultar histórico almacenado en PostgreSQL
+Puedes conectarte a la BD para validar que los datos extraídos fueron procesados:
 ```bash
 kubectl exec -it $(kubectl get pod -l app=postgres -o jsonpath='{.items[0].metadata.name}') \
   -- psql -U scraper -d scraper_db -c \
   "SELECT producto, MIN(precio), MAX(precio), COUNT(*) FROM scrape_results GROUP BY producto;"
 ```
 
-### 5. Limpieza general
-
-Para eliminar todos los recursos asociados de tu cluster, no olvides borrar los manifiestos creados y el secret generado:
-
+#### 5. Limpieza general
+Para eliminar la aplicación del cluster:
 ```bash
-kubectl delete -f hit8/k8s/
+kubectl delete -f k8s/
 kubectl delete secret postgres-credentials
 ```

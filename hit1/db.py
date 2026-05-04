@@ -50,14 +50,19 @@ def get_connection():
     Raises:
         psycopg2.OperationalError si no puede conectar dentro de 10 segundos.
     """
-    return psycopg2.connect(
-        host=os.getenv("POSTGRES_HOST", "postgres"),
-        port=int(os.getenv("POSTGRES_PORT", "5432")),
-        dbname=os.getenv("POSTGRES_DB", "scraper_db"),
-        user=os.getenv("POSTGRES_USER", "scraper"),
-        password=os.getenv("POSTGRES_PASSWORD", "scraper_pass_dev_only"),
-        connect_timeout=10,
-    )
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv("POSTGRES_HOST", "postgres"),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
+            dbname=os.getenv("POSTGRES_DB", "scraper_db"),
+            user=os.getenv("POSTGRES_USER", "scraper"),
+            password=os.getenv("POSTGRES_PASSWORD", "scraper_pass_dev_only"),
+            connect_timeout=10,
+        )
+        return conn
+    except Exception as e:
+        logger.error("event=db_connection_error | error='%s'", type(e).__name__, exc_info=True)
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -109,9 +114,12 @@ def run_migrations(migrations_dir: str = "migrations") -> None:
                         "INSERT INTO schema_migrations (filename) VALUES (%s)",
                         (filename,),
                     )
-                    logger.info("Migration aplicada: %s", filename)
+                    logger.info("event=migration_applied | filename='%s'", filename)
 
-        logger.info("Migrations completadas")
+        logger.info("event=migrations_completed")
+    except Exception as e:
+        logger.error("event=migrations_error | error='%s'", type(e).__name__, exc_info=True)
+        raise
     finally:
         conn.close()
 
@@ -167,13 +175,13 @@ def save_results(results: list[dict], product: str, browser: str) -> int:
                     )
                     inserted += 1
         logger.info(
-            "Resultados persistidos | producto=%s | filas=%d",
+            "event=db_insert_success | producto='%s' | filas=%d",
             product, inserted,
         )
     except Exception as e:
         logger.error(
-            "Error persistiendo resultados | producto=%s | %s",
-            product, e,
+            "event=db_insert_error | producto='%s' | error='%s'",
+            product, type(e).__name__,
             exc_info=True,
         )
     finally:
