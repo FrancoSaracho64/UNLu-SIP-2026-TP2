@@ -1,0 +1,6 @@
+/.venv
+/prompts
+output/
+.coverage
+coverage_html/
+__pycache__/
