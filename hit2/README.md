@@ -1,4 +1,4 @@
-# Hit #1 y Aplicación Base — Stack de Observabilidad + Scraper en Kubernetes
+# Hit #2 y Aplicación Base — Stack de Observabilidad + Scraper en Kubernetes
 
 Este directorio contiene tanto el código de la aplicación de Scraping (estado base) como la implementación del **Hit #1** (Infraestructura de Observabilidad con Loki, Promtail y Grafana).
 
@@ -42,6 +42,8 @@ cd observability
 ./install.sh
 cd ..
 ```
+
+> **Aviso Hit #2**: Al aplicar `install.sh`, la configuración de Promtail ya incluye el filtrado exclusivo para el namespace `ml-scraper` y mapeo de labels como se requiere en la consigna.
 
 ### Verificación del Stack
 
@@ -128,37 +130,54 @@ docker save ml-scraper:latest -o /tmp/ml-scraper.tar
 sudo k3s ctr images import /tmp/ml-scraper.tar && rm /tmp/ml-scraper.tar
 ```
 
-#### 3. Aplicar manifiestos
-Levantamos los recursos:
+#### 3. Aplicar manifiestos en el namespace ml-scraper
+Levantamos los recursos indicando que deben ir al namespace exclusivo de la aplicación:
 
 ```bash
-kubectl apply -f k8s/
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/ -n ml-scraper
 ```
 
 Esperamos a que la base de datos PostgreSQL inicie por completo:
 ```bash
-kubectl wait --for=condition=ready pod -l app=postgres --timeout=120s
+kubectl wait --for=condition=ready pod -l app=postgres -n ml-scraper --timeout=120s
 ```
+
+#### 4. Disparar tráfico y validar labels en Grafana (Hit #2)
+Creamos un Job manual para que Promtail lo capture:
+```bash
+kubectl -n ml-scraper create job --from=cronjob/scraper-hourly scraper-test-1
+kubectl -n ml-scraper wait --for=condition=complete job/scraper-test-1 --timeout=600s
+```
+
+Ve a **Grafana → Explore → Loki**, y prueba estas queries:
+```logql
+{namespace="ml-scraper", app="scraper"}
+```
+Y refinada por job:
+```logql
+{namespace="ml-scraper", app="scraper", job_name="scraper-test-1"}
+```
+> **Recuerda**: Captura un screenshot mostrando los logs filtrados por estos labels y guárdalo en `observability/screenshots/hit2-labels.png`.
 
 > **¡Magia de la Observabilidad!** 🪄  
 > Como ya desplegaste Promtail en el paso anterior, este detectará automáticamente la creación del Job del scraper y capturará sus registros. Entra a tu Grafana y podrás ver el Dashboard pre-cargado de "Scraper Overview" mostrando los logs de esta ejecución sin necesidad de usar `kubectl logs`.
 
 Si igual quieres ver la ejecución por consola local:
 ```bash
-kubectl logs -l job-type=one-off -c scraper -f
+kubectl logs -n ml-scraper -l job-type=one-off -c scraper -f
 ```
 
-#### 4. Consultar histórico almacenado en PostgreSQL
+#### 5. Consultar histórico almacenado en PostgreSQL
 Puedes conectarte a la BD para validar que los datos extraídos fueron procesados:
 ```bash
-kubectl exec -it $(kubectl get pod -l app=postgres -o jsonpath='{.items[0].metadata.name}') \
+kubectl exec -n ml-scraper -it $(kubectl get pod -n ml-scraper -l app=postgres -o jsonpath='{.items[0].metadata.name}') \
   -- psql -U scraper -d scraper_db -c \
   "SELECT producto, MIN(precio), MAX(precio), COUNT(*) FROM scrape_results GROUP BY producto;"
 ```
 
-#### 5. Limpieza general
+#### 6. Limpieza general
 Para eliminar la aplicación del cluster:
 ```bash
-kubectl delete -f k8s/
-kubectl delete secret postgres-credentials
+kubectl delete namespace ml-scraper
 ```
